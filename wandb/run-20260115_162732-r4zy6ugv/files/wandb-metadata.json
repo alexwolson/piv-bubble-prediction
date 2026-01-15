@@ -1,0 +1,44 @@
+{
+  "os": "macOS-26.3-arm64-arm-64bit",
+  "python": "CPython 3.11.13",
+  "startedAt": "2026-01-15T21:27:32.375503Z",
+  "args": [
+    "--n-trials",
+    "50",
+    "--study-name",
+    "cnn_lstm_hyperopt",
+    "--storage",
+    "sqlite:///optuna_study_amp.db",
+    "--pruning",
+    "--use-wandb",
+    "--use-amp",
+    "--amp-batch-multiplier",
+    "2.0"
+  ],
+  "program": "-m src.tune",
+  "email": "alex.olson@outlook.com",
+  "root": "/Users/alex/repos/piv-bubble-prediction",
+  "host": "Alexs-Macbook-7.local",
+  "executable": "/Users/alex/repos/piv-bubble-prediction/.venv/bin/python3",
+  "cpu_count": 14,
+  "cpu_count_logical": 14,
+  "disk": {
+    "/": {
+      "total": "494353338368",
+      "used": "474385313792"
+    }
+  },
+  "memory": {
+    "total": "25769803776"
+  },
+  "apple": {
+    "name": "Apple M4 Pro",
+    "ecpuCores": 4,
+    "pcpuCores": 10,
+    "gpuCores": 20,
+    "memoryGb": 24,
+    "swapTotalBytes": "5368709120",
+    "ramTotalBytes": "25769803776"
+  },
+  "writerId": "i5in2g13fh9rlgdmss69y0f4ulw7df1o"
+}

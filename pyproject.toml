@@ -1,0 +1,20 @@
+[project]
+name = "piv-bubble-prediction"
+version = "0.1.0"
+description = "Machine learning models to predict bubble counts from PIV velocity field data"
+requires-python = ">=3.9"
+dependencies = [
+    "matplotlib>=3.9.4",
+    "numpy>=2.0.2",
+    "optuna>=4.6.0",
+    "pandas>=2.3.3",
+    "pyarrow>=21.0.0",
+    "rich>=14.2.0",
+    "scikit-learn>=1.6.1",
+    "seaborn>=0.13.2",
+    "torch>=2.8.0",
+    "torchvision>=0.23.0",
+    "wandb>=0.16.0",
+    "xgboost>=2.1.4",
+    "zarr>=2.18.2",
+]

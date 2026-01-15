@@ -1,0 +1,48 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+dist/
+build/
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Data (keep structure, ignore large files)
+data/raw/*.zarr/
+data/intermediate/*.parquet
+data/processed/*.zarr/
+
+# Models and outputs
+models/*.json
+models/*.pkl
+figures/*.pdf
+figures/*.png
+
+# Logs
+*.log
+logs/
+
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Optuna
+*.db
+optuna_*.log
