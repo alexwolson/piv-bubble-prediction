@@ -46,3 +46,6 @@ Thumbs.db
 # Optuna
 *.db
 optuna_*.log
+
+# Weights & Biases
+wandb/
