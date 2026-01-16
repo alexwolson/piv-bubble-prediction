@@ -44,12 +44,12 @@ SSH to nibi and clone your repository:
 
 ```bash
 ssh awolson@nibi.alliancecan.ca
-cd /project/<your-group>/  # or use $HOME for personal space
+cd /home/awolson/projects/def-bussmann/awolson/
 git clone <repository-url> piv-bubble-prediction
 cd piv-bubble-prediction
 ```
 
-Replace `<your-group>` with your project group name.
+The repository should be cloned at: `/home/awolson/projects/def-bussmann/awolson/piv-bubble-prediction`
 
 ### 2. Verify Project Structure
 
@@ -75,7 +75,7 @@ PROJECT_GROUP=mygroup bash scripts/transfer/sync_data.sh
 
 1. **Transfer to Project Space** (recommended for large data):
    ```bash
-   PROJECT_GROUP=mygroup bash scripts/transfer/sync_data.sh
+   PROJECT_GROUP=def-bussmann bash scripts/transfer/sync_data.sh
    ```
 
 2. **Transfer to Scratch Space** (temporary, 1TB quota):
@@ -85,7 +85,7 @@ PROJECT_GROUP=mygroup bash scripts/transfer/sync_data.sh
 
 3. **Custom Paths**:
    ```bash
-   bash scripts/transfer/sync_data.sh ./data/raw/all_experiments.zarr/ awolson@nibi.alliancecan.ca:/project/mygroup/data/raw/
+   bash scripts/transfer/sync_data.sh ./data/raw/all_experiments.zarr/ awolson@nibi.alliancecan.ca:/project/def-bussmann/data/raw/
    ```
 
 **Note:** The first transfer may take a while depending on data size. Subsequent transfers will only sync changes (incremental).
@@ -101,7 +101,7 @@ After transfer, verify data is accessible:
 
 ```bash
 ssh awolson@nibi.alliancecan.ca
-ls -lh /project/<group>/data/raw/all_experiments.zarr/
+ls -lh /project/def-bussmann/data/raw/all_experiments.zarr/
 # or
 ls -lh /scratch/awolson/data/raw/all_experiments.zarr/
 ```
@@ -140,7 +140,9 @@ This will:
 
 **Custom Location:**
 ```bash
-bash scripts/nibi/setup_venv.sh /project/<group>/venv/piv-bubble-prediction
+# Default location: $HOME/.venv/piv-bubble-prediction
+# Or specify custom path:
+bash scripts/nibi/setup_venv.sh /home/awolson/projects/def-bussmann/awolson/piv-bubble-prediction/.venv
 ```
 
 ### 3. Set Environment Variables
@@ -154,8 +156,8 @@ export SBATCH_ACCOUNT=$SLURM_ACCOUNT
 export SALLOC_ACCOUNT=$SLURM_ACCOUNT
 
 # Project paths
-export PIV_DATA_PATH=/project/<group>/data/raw/all_experiments.zarr/
-export PIV_OUTPUT_DIR=/project/<group>/piv-bubble-prediction/outputs/
+export PIV_DATA_PATH=/project/def-bussmann/data/raw/all_experiments.zarr/
+export PIV_OUTPUT_DIR=/home/awolson/projects/def-bussmann/awolson/piv-bubble-prediction/outputs/
 
 # Weights & Biases (optional)
 export WANDB_API_KEY=<your-key>
@@ -193,7 +195,7 @@ Update `train.sh`, `tune.sh`, and `evaluate.sh`:
 ### 2. Submit Training Job
 
 ```bash
-cd /project/<group>/piv-bubble-prediction
+cd /home/awolson/projects/def-bussmann/awolson/piv-bubble-prediction
 sbatch scripts/slurm/train.sh
 ```
 
@@ -370,15 +372,17 @@ bash scripts/nibi/setup_venv.sh
 ## Quick Reference
 
 ```bash
-# Setup (one-time)
+# Setup (one-time, on nibi)
+cd /home/awolson/projects/def-bussmann/awolson/piv-bubble-prediction
 source scripts/nibi/setup_modules.sh
 bash scripts/nibi/setup_venv.sh
 source scripts/nibi/activate_env.sh
 
 # Transfer data (from local machine)
-PROJECT_GROUP=mygroup bash scripts/transfer/sync_data.sh
+PROJECT_GROUP=def-bussmann bash scripts/transfer/sync_data.sh
 
 # Submit jobs (on nibi)
+cd /home/awolson/projects/def-bussmann/awolson/piv-bubble-prediction
 sbatch scripts/slurm/train.sh
 sbatch scripts/slurm/tune.sh
 sbatch scripts/slurm/evaluate.sh
