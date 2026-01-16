@@ -27,7 +27,7 @@ set -e  # Exit on error
 
 # Default values
 SOURCE=${1:-data/raw/all_experiments.zarr/}
-NIBI_USER=${NIBI_USER:-$USER}
+NIBI_USER=${NIBI_USER:-awolson}
 NIBI_HOST=${NIBI_HOST:-nibi.alliancecan.ca}
 USE_SCRATCH=${USE_SCRATCH:-0}
 
