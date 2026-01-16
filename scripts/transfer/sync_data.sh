@@ -5,17 +5,16 @@
 #
 # Arguments:
 #   SOURCE: Local path to Zarr archive (default: data/raw/all_experiments.zarr/)
-#   DEST: Destination path on cluster (default: user@nibi.alliancecan.ca:/project/<group>/data/raw/)
+#   DEST: Destination path on cluster (default: /home/awolson/projects/def-bussmann/awolson/piv-bubble-prediction/data/raw/)
 #
 # Environment variables:
 #   NIBI_USER: Username on nibi cluster (default: awolson)
 #   NIBI_HOST: Hostname for nibi (default: nibi.alliancecan.ca)
-#   PROJECT_GROUP: Project group name for /project/ path (required)
-#   USE_SCRATCH: Set to "1" to use /scratch instead of /project
+#   USE_SCRATCH: Set to "1" to use /scratch instead of project directory
 #
 # Examples:
-#   # Transfer to project space (recommended for large data)
-#   PROJECT_GROUP=mygroup bash scripts/transfer/sync_data.sh
+#   # Transfer to project directory (default)
+#   bash scripts/transfer/sync_data.sh
 #
 #   # Transfer to scratch space (temporary, 1TB quota)
 #   USE_SCRATCH=1 bash scripts/transfer/sync_data.sh
