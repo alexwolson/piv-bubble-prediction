@@ -8,7 +8,7 @@
 #   DEST: Destination path on cluster (default: user@nibi.alliancecan.ca:/project/<group>/data/raw/)
 #
 # Environment variables:
-#   NIBI_USER: Username on nibi cluster (default: $USER)
+#   NIBI_USER: Username on nibi cluster (default: awolson)
 #   NIBI_HOST: Hostname for nibi (default: nibi.alliancecan.ca)
 #   PROJECT_GROUP: Project group name for /project/ path (required)
 #   USE_SCRATCH: Set to "1" to use /scratch instead of /project
@@ -21,7 +21,7 @@
 #   USE_SCRATCH=1 bash scripts/transfer/sync_data.sh
 #
 #   # Custom source and destination
-#   bash scripts/transfer/sync_data.sh ./my_data.zarr/ user@nibi.alliancecan.ca:/scratch/user/data/
+#   bash scripts/transfer/sync_data.sh ./my_data.zarr/ awolson@nibi.alliancecan.ca:/scratch/awolson/data/
 
 set -e  # Exit on error
 
@@ -98,8 +98,9 @@ rsync "${RSYNC_OPTS[@]}" "$SOURCE" "$DEST" || {
     echo ""
     echo "Transfer failed. Check:"
     echo "1. SSH access to nibi: ssh $NIBI_USER@$NIBI_HOST"
-    echo "2. Destination path exists and is writable"
-    echo "3. Network connectivity"
+    echo "2. Multifactor authentication (MFA) is configured for your account"
+    echo "3. Destination path exists and is writable"
+    echo "4. Network connectivity"
     exit 1
 }
 
