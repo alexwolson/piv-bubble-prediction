@@ -39,7 +39,8 @@ else
 fi
 
 # Set environment variables
-export PIV_DATA_PATH=${PIV_DATA_PATH:-/project/<group>/data/raw/all_experiments.zarr/}
+# Default: /home/awolson/projects/def-bussmann/awolson/piv-bubble-prediction/data/raw/all_experiments.zarr/
+export PIV_DATA_PATH=${PIV_DATA_PATH:-/home/awolson/projects/def-bussmann/awolson/piv-bubble-prediction/data/raw/all_experiments.zarr/}
 export WANDB_API_KEY=${WANDB_API_KEY:-}  # Set in ~/.bashrc or job script
 
 # Create output directories

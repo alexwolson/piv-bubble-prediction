@@ -71,11 +71,16 @@ Use the provided transfer script to sync your Zarr data to the cluster:
 PROJECT_GROUP=mygroup bash scripts/transfer/sync_data.sh
 ```
 
+**Default Location**: Data will be transferred to:
+```
+/home/awolson/projects/def-bussmann/awolson/piv-bubble-prediction/data/raw/
+```
+
 **Options:**
 
-1. **Transfer to Project Space** (recommended for large data):
+1. **Transfer to Project Directory** (default):
    ```bash
-   PROJECT_GROUP=def-bussmann bash scripts/transfer/sync_data.sh
+   bash scripts/transfer/sync_data.sh
    ```
 
 2. **Transfer to Scratch Space** (temporary, 1TB quota):
@@ -85,14 +90,20 @@ PROJECT_GROUP=mygroup bash scripts/transfer/sync_data.sh
 
 3. **Custom Paths**:
    ```bash
-   bash scripts/transfer/sync_data.sh ./data/raw/all_experiments.zarr/ awolson@nibi.alliancecan.ca:/project/def-bussmann/data/raw/
+   bash scripts/transfer/sync_data.sh ./data/raw/all_experiments.zarr/ awolson@nibi.alliancecan.ca:/home/awolson/projects/def-bussmann/awolson/piv-bubble-prediction/data/raw/
    ```
 
 **Note:** The first transfer may take a while depending on data size. Subsequent transfers will only sync changes (incremental).
 
 **Default Username:** The script defaults to username `awolson`. To use a different username, set the `NIBI_USER` environment variable:
 ```bash
-NIBI_USER=yourusername PROJECT_GROUP=mygroup bash scripts/transfer/sync_data.sh
+NIBI_USER=yourusername bash scripts/transfer/sync_data.sh
+```
+
+**Note:** The destination directory may need to be created first on nibi:
+```bash
+ssh awolson@nibi.alliancecan.ca
+mkdir -p /home/awolson/projects/def-bussmann/awolson/piv-bubble-prediction/data/raw
 ```
 
 ### Verify Data on Cluster
@@ -101,8 +112,8 @@ After transfer, verify data is accessible:
 
 ```bash
 ssh awolson@nibi.alliancecan.ca
-ls -lh /project/def-bussmann/data/raw/all_experiments.zarr/
-# or
+ls -lh /home/awolson/projects/def-bussmann/awolson/piv-bubble-prediction/data/raw/all_experiments.zarr/
+# or for scratch space
 ls -lh /scratch/awolson/data/raw/all_experiments.zarr/
 ```
 
@@ -156,7 +167,7 @@ export SBATCH_ACCOUNT=$SLURM_ACCOUNT
 export SALLOC_ACCOUNT=$SLURM_ACCOUNT
 
 # Project paths
-export PIV_DATA_PATH=/project/def-bussmann/data/raw/all_experiments.zarr/
+export PIV_DATA_PATH=/home/awolson/projects/def-bussmann/awolson/piv-bubble-prediction/data/raw/all_experiments.zarr/
 export PIV_OUTPUT_DIR=/home/awolson/projects/def-bussmann/awolson/piv-bubble-prediction/outputs/
 
 # Weights & Biases (optional)
@@ -379,7 +390,7 @@ bash scripts/nibi/setup_venv.sh
 source scripts/nibi/activate_env.sh
 
 # Transfer data (from local machine)
-PROJECT_GROUP=def-bussmann bash scripts/transfer/sync_data.sh
+bash scripts/transfer/sync_data.sh
 
 # Submit jobs (on nibi)
 cd /home/awolson/projects/def-bussmann/awolson/piv-bubble-prediction

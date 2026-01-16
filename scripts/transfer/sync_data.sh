@@ -39,13 +39,9 @@ else
         # Use scratch space (temporary, 1TB quota)
         DEST="$NIBI_USER@$NIBI_HOST:/scratch/$NIBI_USER/data/raw/"
     else
-        # Use project space (requires PROJECT_GROUP to be set)
-        if [ -z "$PROJECT_GROUP" ]; then
-            echo "Error: PROJECT_GROUP environment variable must be set when using /project/"
-            echo "Usage: PROJECT_GROUP=mygroup bash scripts/transfer/sync_data.sh"
-            exit 1
-        fi
-        DEST="$NIBI_USER@$NIBI_HOST:/project/$PROJECT_GROUP/data/raw/"
+        # Use project directory (default location in user's project space)
+        # Path: /home/awolson/projects/def-bussmann/awolson/piv-bubble-prediction/data/raw/
+        DEST="$NIBI_USER@$NIBI_HOST:/home/$NIBI_USER/projects/def-bussmann/$NIBI_USER/piv-bubble-prediction/data/raw/"
     fi
 fi
 
@@ -99,7 +95,7 @@ rsync "${RSYNC_OPTS[@]}" "$SOURCE" "$DEST" || {
     echo "Transfer failed. Check:"
     echo "1. SSH access to nibi: ssh $NIBI_USER@$NIBI_HOST"
     echo "2. Multifactor authentication (MFA) is configured for your account"
-    echo "3. Destination path exists and is writable"
+    echo "3. Destination directory exists: ssh $NIBI_USER@$NIBI_HOST 'mkdir -p /home/$NIBI_USER/projects/def-bussmann/$NIBI_USER/piv-bubble-prediction/data/raw'"
     echo "4. Network connectivity"
     exit 1
 }
@@ -111,5 +107,5 @@ echo "To verify on nibi, run:"
 if [ "$USE_SCRATCH" = "1" ]; then
     echo "  ssh $NIBI_USER@$NIBI_HOST 'ls -lh /scratch/$NIBI_USER/data/raw/'"
 else
-    echo "  ssh $NIBI_USER@$NIBI_HOST 'ls -lh /project/$PROJECT_GROUP/data/raw/'"
+    echo "  ssh $NIBI_USER@$NIBI_HOST 'ls -lh /home/$NIBI_USER/projects/def-bussmann/$NIBI_USER/piv-bubble-prediction/data/raw/'"
 fi
