@@ -22,7 +22,7 @@ This guide covers deploying and running the PIV bubble prediction project on DRA
 
 2. **SSH Access**: Configure SSH access to nibi
    ```bash
-   ssh nibi.alliancecan.ca
+   ssh awolson@nibi.alliancecan.ca
    ```
 
 3. **Account Verification**: Check your account on nibi
@@ -43,7 +43,7 @@ This guide covers deploying and running the PIV bubble prediction project on DRA
 SSH to nibi and clone your repository:
 
 ```bash
-ssh nibi.alliancecan.ca
+ssh awolson@nibi.alliancecan.ca
 cd /project/<your-group>/  # or use $HOME for personal space
 git clone <repository-url> piv-bubble-prediction
 cd piv-bubble-prediction
@@ -85,20 +85,25 @@ PROJECT_GROUP=mygroup bash scripts/transfer/sync_data.sh
 
 3. **Custom Paths**:
    ```bash
-   bash scripts/transfer/sync_data.sh ./data/raw/all_experiments.zarr/ user@nibi.alliancecan.ca:/project/mygroup/data/raw/
+   bash scripts/transfer/sync_data.sh ./data/raw/all_experiments.zarr/ awolson@nibi.alliancecan.ca:/project/mygroup/data/raw/
    ```
 
 **Note:** The first transfer may take a while depending on data size. Subsequent transfers will only sync changes (incremental).
+
+**Default Username:** The script defaults to username `awolson`. To use a different username, set the `NIBI_USER` environment variable:
+```bash
+NIBI_USER=yourusername PROJECT_GROUP=mygroup bash scripts/transfer/sync_data.sh
+```
 
 ### Verify Data on Cluster
 
 After transfer, verify data is accessible:
 
 ```bash
-ssh nibi.alliancecan.ca
+ssh awolson@nibi.alliancecan.ca
 ls -lh /project/<group>/data/raw/all_experiments.zarr/
 # or
-ls -lh /scratch/$USER/data/raw/all_experiments.zarr/
+ls -lh /scratch/awolson/data/raw/all_experiments.zarr/
 ```
 
 ## Environment Setup
@@ -266,6 +271,7 @@ scontrol show job <job_id>
 
 **Solution:** Ensure you're in a login shell and modules are initialized:
 ```bash
+ssh awolson@nibi.alliancecan.ca
 source /etc/profile.d/modules.sh  # if needed
 module avail python  # list available Python modules
 ```
@@ -284,6 +290,7 @@ bash scripts/nibi/setup_venv.sh
 **Error:** `CUDA not available` in logs
 
 **Solution:**
+- SSH to nibi: `ssh awolson@nibi.alliancecan.ca`
 - Check GPU is requested in SLURM script (`#SBATCH --gres=gpu:1`)
 - Verify CUDA module is loaded: `module list`
 - Check GPU availability: `nvidia-smi`
