@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --account=def-<your-account>      # Replace with your DRAC account
+#SBATCH --account=def-bussmann            # DRAC account
 #SBATCH --time=24:00:00                   # Time limit (24 hours)
 #SBATCH --gres=gpu:1                      # Request 1 H100 GPU
 #SBATCH --cpus-per-task=16                # CPU cores per task
@@ -40,8 +40,8 @@ fi
 
 # Set environment variables
 # Update PIV_DATA_PATH to match your data location on the cluster
-# Default: /home/awolson/projects/def-bussmann/awolson/piv-bubble-prediction/data/raw/all_experiments.zarr/
-export PIV_DATA_PATH=${PIV_DATA_PATH:-/home/awolson/projects/def-bussmann/awolson/piv-bubble-prediction/data/raw/all_experiments.zarr/}
+# Default: /scratch/$USER/data/raw/all_experiments.zarr/
+export PIV_DATA_PATH=${PIV_DATA_PATH:-/scratch/$USER/data/raw/all_experiments.zarr/}
 export WANDB_API_KEY=${WANDB_API_KEY:-}  # Set in ~/.bashrc or job script
 
 # Create output directories

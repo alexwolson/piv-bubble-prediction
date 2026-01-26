@@ -39,8 +39,7 @@ def get_zarr_path(default_cluster_path: Optional[str] = None) -> str:
     
     Args:
         default_cluster_path: Default path to use on cluster if PIV_DATA_PATH not set.
-                             If None, uses /project/<group>/data/raw/all_experiments.zarr/
-                             (user should replace <group> with their group name)
+                             If None, uses /scratch/<username>/data/raw/all_experiments.zarr/
     
     Returns:
         Path to Zarr archive
@@ -51,13 +50,13 @@ def get_zarr_path(default_cluster_path: Optional[str] = None) -> str:
         return explicit_path
     
     if is_on_cluster():
-        # On cluster: use project directory in user's home space
+        # On cluster: use scratch space
         if default_cluster_path:
             return default_cluster_path
         else:
-            # Default cluster path: /home/awolson/projects/def-bussmann/awolson/piv-bubble-prediction/data/raw/
+            # Default cluster path: /scratch/<username>/data/raw/all_experiments.zarr/
             username = os.environ.get("USER", os.environ.get("USERNAME", "awolson"))
-            return f"/home/{username}/projects/def-bussmann/{username}/piv-bubble-prediction/data/raw/all_experiments.zarr/"
+            return f"/scratch/{username}/data/raw/all_experiments.zarr/"
     else:
         # Local development: use relative path
         return "data/raw/all_experiments.zarr/"

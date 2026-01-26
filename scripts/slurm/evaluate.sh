@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --account=def-<your-account>      # Replace with your DRAC account
+#SBATCH --account=def-bussmann            # DRAC account
 #SBATCH --time=04:00:00                   # Time limit (4 hours - evaluation is typically faster)
 #SBATCH --cpus-per-task=8                 # CPU cores (GPU not required for evaluation)
 #SBATCH --mem=32G                         # Memory per node
@@ -36,8 +36,8 @@ else
 fi
 
 # Set environment variables
-# Default: /home/awolson/projects/def-bussmann/awolson/piv-bubble-prediction/data/raw/all_experiments.zarr/
-export PIV_DATA_PATH=${PIV_DATA_PATH:-/home/awolson/projects/def-bussmann/awolson/piv-bubble-prediction/data/raw/all_experiments.zarr/}
+# Default: /scratch/$USER/data/raw/all_experiments.zarr/
+export PIV_DATA_PATH=${PIV_DATA_PATH:-/scratch/$USER/data/raw/all_experiments.zarr/}
 
 # Create output directories
 mkdir -p logs evaluation_results

@@ -29,8 +29,8 @@ else
 fi
 
 # Set default environment variables if not already set
-export PIV_DATA_PATH=${PIV_DATA_PATH:-/project/<group>/data/raw/all_experiments.zarr/}
-export SLURM_ACCOUNT=${SLURM_ACCOUNT:-def-<your-account>}
+export PIV_DATA_PATH=${PIV_DATA_PATH:-/scratch/$USER/data/raw/all_experiments.zarr/}
+export SLURM_ACCOUNT=${SLURM_ACCOUNT:-def-bussmann}
 
 echo "Environment activated successfully!"
 echo "Data path: $PIV_DATA_PATH"

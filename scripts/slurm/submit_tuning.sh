@@ -143,7 +143,7 @@ if [ -z "${ZARR_PATH}" ]; then
     ZARR_PATH="${PIV_DATA_PATH:-}"
     if [ -z "${ZARR_PATH}" ]; then
         # Default cluster path
-        ZARR_PATH="/home/${USER}/projects/def-bussmann/${USER}/piv-bubble-prediction/data/raw/all_experiments.zarr/"
+        ZARR_PATH="/scratch/${USER}/data/raw/all_experiments.zarr/"
     fi
 fi
 

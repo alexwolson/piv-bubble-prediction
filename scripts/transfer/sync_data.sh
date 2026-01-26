@@ -5,19 +5,15 @@
 #
 # Arguments:
 #   SOURCE: Local path to Zarr archive (default: data/raw/all_experiments.zarr/)
-#   DEST: Destination path on cluster (default: /home/awolson/projects/def-bussmann/awolson/piv-bubble-prediction/data/raw/)
+#   DEST: Destination path on cluster (default: /scratch/$NIBI_USER/data/raw/)
 #
 # Environment variables:
 #   NIBI_USER: Username on nibi cluster (default: awolson)
 #   NIBI_HOST: Hostname for nibi (default: nibi.alliancecan.ca)
-#   USE_SCRATCH: Set to "1" to use /scratch instead of project directory
 #
 # Examples:
-#   # Transfer to project directory (default)
+#   # Transfer to scratch space (default)
 #   bash scripts/transfer/sync_data.sh
-#
-#   # Transfer to scratch space (temporary, 1TB quota)
-#   USE_SCRATCH=1 bash scripts/transfer/sync_data.sh
 #
 #   # Custom source and destination
 #   bash scripts/transfer/sync_data.sh ./my_data.zarr/ awolson@nibi.alliancecan.ca:/scratch/awolson/data/
@@ -28,20 +24,13 @@ set -e  # Exit on error
 SOURCE=${1:-data/raw/all_experiments.zarr/}
 NIBI_USER=${NIBI_USER:-awolson}
 NIBI_HOST=${NIBI_HOST:-nibi.alliancecan.ca}
-USE_SCRATCH=${USE_SCRATCH:-0}
 
 # Determine destination path
 if [ -n "$2" ]; then
     DEST="$2"
 else
-    if [ "$USE_SCRATCH" = "1" ]; then
-        # Use scratch space (temporary, 1TB quota)
-        DEST="$NIBI_USER@$NIBI_HOST:/scratch/$NIBI_USER/data/raw/"
-    else
-        # Use project directory (default location in user's project space)
-        # Path: /home/awolson/projects/def-bussmann/awolson/piv-bubble-prediction/data/raw/
-        DEST="$NIBI_USER@$NIBI_HOST:/home/$NIBI_USER/projects/def-bussmann/$NIBI_USER/piv-bubble-prediction/data/raw/"
-    fi
+    # Use scratch space (default location for cluster data)
+    DEST="$NIBI_USER@$NIBI_HOST:/scratch/$NIBI_USER/data/raw/"
 fi
 
 # Validate source exists
@@ -94,7 +83,7 @@ rsync "${RSYNC_OPTS[@]}" "$SOURCE" "$DEST" || {
     echo "Transfer failed. Check:"
     echo "1. SSH access to nibi: ssh $NIBI_USER@$NIBI_HOST"
     echo "2. Multifactor authentication (MFA) is configured for your account"
-    echo "3. Destination directory exists: ssh $NIBI_USER@$NIBI_HOST 'mkdir -p /home/$NIBI_USER/projects/def-bussmann/$NIBI_USER/piv-bubble-prediction/data/raw'"
+    echo "3. Destination directory exists: ssh $NIBI_USER@$NIBI_HOST 'mkdir -p /scratch/$NIBI_USER/data/raw'"
     echo "4. Network connectivity"
     exit 1
 }
@@ -103,8 +92,4 @@ echo ""
 echo "Transfer completed successfully!"
 echo ""
 echo "To verify on nibi, run:"
-if [ "$USE_SCRATCH" = "1" ]; then
-    echo "  ssh $NIBI_USER@$NIBI_HOST 'ls -lh /scratch/$NIBI_USER/data/raw/'"
-else
-    echo "  ssh $NIBI_USER@$NIBI_HOST 'ls -lh /home/$NIBI_USER/projects/def-bussmann/$NIBI_USER/piv-bubble-prediction/data/raw/'"
-fi
+echo "  ssh $NIBI_USER@$NIBI_HOST 'ls -lh /scratch/$NIBI_USER/data/raw/'"
