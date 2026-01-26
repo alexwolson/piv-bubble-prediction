@@ -20,9 +20,9 @@ if [ -f "$PROJECT_ROOT/scripts/nibi/setup_modules.sh" ]; then
 else
     echo "Warning: setup_modules.sh not found. Make sure to load modules manually."
     module purge
+    module load StdEnv/2023
     module load python/3.11
-    module load cuda/12.1
-    module load pytorch/2.1.0
+    module load cuda
 fi
 
 # Check if uv is available

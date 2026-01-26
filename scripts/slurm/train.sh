@@ -16,9 +16,9 @@ echo "Working directory: $(pwd)"
 
 # Load required modules
 module purge
+module load StdEnv/2023
 module load python/3.11
-module load cuda/12.1
-module load pytorch/2.1.0
+module load cuda
 
 # Print module information
 echo "Python version: $(python --version)"
