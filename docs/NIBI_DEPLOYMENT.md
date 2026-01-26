@@ -217,8 +217,90 @@ Submitted batch job 123456
 
 ### 3. Submit Hyperparameter Tuning Job
 
+**Option A: Job Array (Recommended)**
+
+Use the job array submission script for parallel trial execution:
+
+```bash
+cd /home/awolson/projects/def-bussmann/awolson/piv-bubble-prediction
+bash scripts/slurm/submit_tuning.sh --account def-bussmann
+```
+
+This will submit a job array with 8 workers by default, each running 1 trial (8 total trials). You can customize:
+
+```bash
+# Submit 16 workers, each running 3 trials (48 total trials)
+bash scripts/slurm/submit_tuning.sh \
+    --account def-bussmann \
+    --num-workers 16 \
+    --trials-per-worker 3 \
+    --study-name cnn_lstm_hyperopt \
+    --storage-path optuna_studies/optuna.db
+
+# With custom resources and options
+bash scripts/slurm/submit_tuning.sh \
+    --account def-bussmann \
+    --num-workers 8 \
+    --trials-per-worker 5 \
+    --time 00:30:00 \
+    --mem 128G \
+    --cpus 32 \
+    --epochs 50 \
+    --patience 15 \
+    --pruning \
+    --use-wandb \
+    --wandb-project piv-bubble-prediction
+```
+
+**Key Options:**
+- `--num-workers`: Number of parallel workers (default: 8)
+- `--trials-per-worker`: Trials each worker runs (default: 1)
+- `--max-concurrent`: Limit concurrent workers (default: unlimited)
+- `--time`: Time limit per worker (default: 00:15:00)
+- `--study-name`: Optuna study name (default: cnn_lstm_hyperopt)
+- `--storage-path`: SQLite database path (default: optuna_studies/optuna.db)
+- `--pruning`: Enable Optuna pruning
+- `--use-wandb`: Enable Weights & Biases logging
+
+**Option B: Single Job (Legacy)**
+
+For testing or small runs, you can still use the single-job approach:
+
 ```bash
 sbatch scripts/slurm/tune.sh
+```
+
+**Monitoring Job Arrays:**
+
+Job arrays appear in `squeue` as individual tasks:
+```bash
+# View all array tasks
+squeue -j <JOB_ID>
+
+# View logs for specific worker
+tail -f logs/optuna_worker_<JOB_ID>_<TASK_ID>.out
+
+# View all worker logs
+tail -f logs/optuna_worker_<JOB_ID>_*.out
+
+# Cancel all workers
+scancel <JOB_ID>
+```
+
+**Viewing Results:**
+
+```bash
+# Load and inspect study
+python -c "
+import optuna
+study = optuna.load_study(
+    study_name='cnn_lstm_hyperopt',
+    storage='sqlite:///optuna_studies/optuna.db'
+)
+print('Best params:', study.best_params)
+print('Best value:', study.best_value)
+print('Number of trials:', len(study.trials))
+"
 ```
 
 ### 4. Submit Evaluation Job
@@ -394,16 +476,24 @@ bash scripts/transfer/sync_data.sh
 
 # Submit jobs (on nibi)
 cd /home/awolson/projects/def-bussmann/awolson/piv-bubble-prediction
+
+# Training
 sbatch scripts/slurm/train.sh
-sbatch scripts/slurm/tune.sh
+
+# Hyperparameter tuning (job array - recommended)
+bash scripts/slurm/submit_tuning.sh --account def-bussmann
+
+# Evaluation
+export MODEL_CHECKPOINT=models/best_model.pt
 sbatch scripts/slurm/evaluate.sh
 
 # Monitor
 sq  # list jobs
-tail -f logs/train_<job_id>.out  # view output
+squeue -j <job_id>  # view array job tasks
+tail -f logs/optuna_worker_<job_id>_*.out  # view worker logs
 
 # Cancel
-scancel <job_id>
+scancel <job_id>  # cancel all array tasks
 ```
 
 ## References
