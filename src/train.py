@@ -99,13 +99,21 @@ def train_epoch(
     criterion: nn.Module,
     optimizer: optim.Optimizer,
     device: torch.device,
-) -> Dict[str, float]:
+    compute_full_metrics: bool = True,
+    epoch: int = 0,
+    wandb_run=None,
+) -> Tuple[Dict[str, float], int]:
     """Train for one epoch."""
     model.train()
     total_loss = 0.0
     n_samples = 0
     
-    for sequences, targets in dataloader:
+    all_predictions = []
+    all_targets = []
+    
+    n_batches = len(dataloader)
+    
+    for batch_idx, (sequences, targets) in enumerate(dataloader):
         sequences = sequences.to(device)  # (batch, seq_len, channels, height, width)
         targets = targets.to(device)  # (batch, 2)
         
@@ -120,11 +128,42 @@ def train_epoch(
         loss.backward()
         optimizer.step()
         
-        total_loss += loss.item() * len(sequences)
+        batch_loss = loss.item()
+        total_loss += batch_loss * len(sequences)
         n_samples += len(sequences)
+        
+        # Log per-batch loss to command line and wandb
+        logger.debug(
+            f"Epoch {epoch+1} | Batch {batch_idx+1}/{n_batches} | Loss: {batch_loss:.4f}"
+        )
+        
+        if wandb_run is not None:
+            import wandb
+            step = epoch * n_batches + batch_idx
+            wandb.log({
+                "train/batch_loss": batch_loss,
+                "batch": batch_idx,
+                "epoch": epoch,
+            }, step=step)
+        
+        # Collect predictions and targets for full metrics computation
+        if compute_full_metrics:
+            all_predictions.append(predictions.detach().cpu().numpy())
+            all_targets.append(targets.detach().cpu().numpy())
     
     avg_loss = total_loss / n_samples
-    return {"loss": avg_loss}
+    metrics = {"loss": avg_loss}
+    
+    # Compute full metrics if requested
+    if compute_full_metrics and all_predictions:
+        all_predictions = np.concatenate(all_predictions, axis=0)
+        all_targets = np.concatenate(all_targets, axis=0)
+        full_metrics = compute_metrics(all_predictions, all_targets)
+        metrics.update(full_metrics)
+    
+    # Return metrics and the step number for epoch logging (one step after last batch)
+    epoch_step = epoch * n_batches + n_batches if n_batches > 0 else epoch
+    return metrics, epoch_step
 
 
 def compute_metrics(predictions: np.ndarray, targets: np.ndarray) -> Dict[str, float]:
@@ -573,9 +612,15 @@ def main():
         TimeRemainingColumn(),
         console=console,
     ) as progress:
+        task = progress.add_task("[cyan]Training...", total=args.epochs)
         for epoch in range(args.epochs):
             # Train
-            train_metrics = train_epoch(model, train_loader, criterion, optimizer, device)
+            train_metrics, epoch_step = train_epoch(
+                model, train_loader, criterion, optimizer, device,
+                compute_full_metrics=True,
+                epoch=epoch,
+                wandb_run=wandb_run if args.use_wandb else None,
+            )
             
             # Validate
             test_metrics = validate(model, test_loader, criterion, device)
@@ -583,17 +628,19 @@ def main():
             # Update learning rate
             scheduler.step(test_metrics["loss"])
             
-            # Log progress
-            logger.info(
-                f"Epoch {epoch+1}/{args.epochs} | "
-                f"Train Loss: {train_metrics['loss']:.4f} | "
-                f"Test Loss: {test_metrics['loss']:.4f} | "
-                f"Test MAE Primary: {test_metrics['mae_primary']:.4f} | "
-                f"Test MAE Secondary: {test_metrics['mae_secondary']:.4f} | "
-                f"Test R² Primary: {test_metrics['r2_primary']:.4f} | "
-                f"Test R² Secondary: {test_metrics['r2_secondary']:.4f} | "
-                f"Test MAPE Primary: {test_metrics['mape_primary']:.2f}% | "
-                f"Test MAPE Secondary: {test_metrics['mape_secondary']:.2f}%"
+            # Update progress bar with metrics
+            progress.update(
+                task,
+                advance=1,
+                description=(
+                    f"[cyan]Epoch {epoch+1}/{args.epochs} | "
+                    f"Train Loss: {train_metrics['loss']:.4f} | "
+                    f"Train R²: {train_metrics.get('r2_total', 0):.4f} | "
+                    f"Train MAPE: {train_metrics.get('mape_total', 0):.2f}% | "
+                    f"Test Loss: {test_metrics['loss']:.4f} | "
+                    f"Test R²: {test_metrics['r2_total']:.4f} | "
+                    f"Test MAPE: {test_metrics['mape_total']:.2f}%"
+                ),
             )
             
             # TensorBoard logging
@@ -616,6 +663,18 @@ def main():
                 log_dict = {
                     "epoch": epoch,
                     "train/loss": train_metrics["loss"],
+                    "train/mae_primary": train_metrics.get("mae_primary", 0),
+                    "train/mae_secondary": train_metrics.get("mae_secondary", 0),
+                    "train/mae_total": train_metrics.get("mae_total", 0),
+                    "train/rmse_primary": train_metrics.get("rmse_primary", 0),
+                    "train/rmse_secondary": train_metrics.get("rmse_secondary", 0),
+                    "train/rmse_total": train_metrics.get("rmse_total", 0),
+                    "train/mape_primary": train_metrics.get("mape_primary", 0),
+                    "train/mape_secondary": train_metrics.get("mape_secondary", 0),
+                    "train/mape_total": train_metrics.get("mape_total", 0),
+                    "train/r2_primary": train_metrics.get("r2_primary", 0),
+                    "train/r2_secondary": train_metrics.get("r2_secondary", 0),
+                    "train/r2_total": train_metrics.get("r2_total", 0),
                     "test/loss": test_metrics["loss"],
                     "test/mae_primary": test_metrics["mae_primary"],
                     "test/mae_secondary": test_metrics["mae_secondary"],
@@ -631,7 +690,7 @@ def main():
                     "test/r2_total": test_metrics["r2_total"],
                     "learning_rate": optimizer.param_groups[0]["lr"],
                 }
-                wandb.log(log_dict)
+                wandb.log(log_dict, step=epoch_step)
             
             # Save best model
             if test_metrics["loss"] < best_test_loss:

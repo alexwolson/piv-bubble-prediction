@@ -49,3 +49,5 @@ optuna_*.log
 
 # Weights & Biases
 wandb/
+optuna_studies/
+wandb/latest-run

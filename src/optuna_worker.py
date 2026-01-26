@@ -42,7 +42,6 @@ def create_objective_function(
     targets: torch.Tensor,
     device: torch.device,
     args: argparse.Namespace,
-    wandb_run=None,
 ):
     """
     Create an objective function for Optuna optimization.
@@ -52,7 +51,6 @@ def create_objective_function(
         targets: Training targets
         device: Device to train on
         args: Command-line arguments
-        wandb_run: Optional WandB run object for logging
         
     Returns:
         Objective function that takes a trial and returns a float
@@ -67,18 +65,51 @@ def create_objective_function(
         Returns:
             Validation loss (objective value)
         """
+        wandb_run = None
         try:
-            val_loss = train_trial(trial, sequences, targets, device, args)
+            # Initialize wandb for this trial
+            if args.use_wandb:
+                try:
+                    import wandb
+                    wandb_mode = args.wandb_mode or os.environ.get("WANDB_MODE_OVERRIDE", "online")
+                    if os.environ.get("DISABLE_WANDB") == "true":
+                        wandb_run = None
+                    else:
+                        wandb.init(
+                            project=args.wandb_project,
+                            entity=args.wandb_entity,
+                            config={**vars(args), **trial.params},
+                            name=f"{args.study_name}-trial-{trial.number}-worker-{args.worker_id}",
+                            mode=wandb_mode,
+                            reinit=True,  # Allow reinitialization for multiple trials
+                        )
+                        wandb_run = wandb.run
+                        logger.info(f"Wandb run initialized for trial {trial.number} (worker {args.worker_id})")
+                except ImportError:
+                    logger.warning("wandb not available. Install with: pip install wandb")
+                    wandb_run = None
             
-            # Log to wandb if enabled
-            if args.use_wandb and wandb_run:
+            val_loss = train_trial(trial, sequences, targets, device, args, wandb_run=wandb_run)
+            
+            # Log final trial metrics to wandb
+            if wandb_run:
                 import wandb
-                wandb.log({
+                log_dict = {
                     "trial": trial.number,
                     "validation_loss": val_loss,
                     "worker_id": args.worker_id,
                     **trial.params,
-                })
+                }
+                # Add all performance metrics from trial user attributes
+                metric_types = ["mae", "rmse", "mape", "r2"]
+                metric_targets = ["primary", "secondary", "total"]
+                for metric_type in metric_types:
+                    for target in metric_targets:
+                        metric_name = f"{metric_type}_{target}"
+                        value = trial.user_attrs.get(metric_name)
+                        if value is not None:
+                            log_dict[f"trial/{metric_name}"] = value
+                wandb.log(log_dict)
             
             return val_loss
         except optuna.TrialPruned:
@@ -87,6 +118,14 @@ def create_objective_function(
             logger.error(f"Trial {trial.number} failed: {e}", exc_info=True)
             # Return a poor value instead of failing
             return float("inf") if args.direction == "minimize" else float("-inf")
+        finally:
+            # Always finish wandb run for this trial
+            if wandb_run:
+                try:
+                    import wandb
+                    wandb.finish()
+                except Exception as e:
+                    logger.warning(f"Error finishing wandb run for trial {trial.number}: {e}")
     
     return objective
 
@@ -288,28 +327,8 @@ def main():
     
     logger.info(f"Using device: {device}")
     
-    # Initialize wandb if enabled
-    wandb_run = None
-    if args.use_wandb:
-        try:
-            import wandb
-            wandb_mode = args.wandb_mode or os.environ.get("WANDB_MODE_OVERRIDE", "online")
-            if os.environ.get("DISABLE_WANDB") == "true":
-                logger.info("WandB disabled via DISABLE_WANDB environment variable")
-                args.use_wandb = False
-            else:
-                wandb.init(
-                    project=args.wandb_project,
-                    entity=args.wandb_entity,
-                    config=vars(args),
-                    name=f"optuna-{args.study_name}-{args.worker_id}",
-                    mode=wandb_mode,
-                )
-                wandb_run = wandb.run
-                logger.info(f"Weights & Biases logging enabled (mode: {wandb_mode})")
-        except ImportError:
-            logger.warning("wandb not available. Install with: pip install wandb")
-            args.use_wandb = False
+    # Wandb will be initialized per trial in the objective function
+    # No global initialization needed
     
     # Load data
     logger.info(f"Loading data from {args.zarr_path}...")
@@ -350,7 +369,7 @@ def main():
         sys.exit(1)
     
     # Create objective function
-    objective = create_objective_function(sequences, targets, device, args, wandb_run)
+    objective = create_objective_function(sequences, targets, device, args)
     
     # Run trials
     logger.info(f"Starting {args.trials_per_worker} trial(s)...")
@@ -378,11 +397,7 @@ def main():
     logger.info(f"Best value so far: {study.best_value:.4f}" if study.trials else "No trials completed")
     logger.info("=" * 60)
     
-    # Finish wandb
-    if args.use_wandb and wandb_run:
-        import wandb
-        wandb.finish()
-    
+    # Wandb runs are finished per trial in the objective function
     logger.info("Worker finished successfully")
 
 

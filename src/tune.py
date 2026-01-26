@@ -11,6 +11,7 @@ import sys
 from pathlib import Path
 from typing import Dict, Optional
 
+import numpy as np
 import optuna
 import torch
 import torch.nn as nn
@@ -90,6 +91,7 @@ def train_trial(
     targets: torch.Tensor,
     device: torch.device,
     args: argparse.Namespace,
+    wandb_run=None,
 ) -> float:
     """
     Train a single trial with suggested hyperparameters.
@@ -189,6 +191,7 @@ def train_trial(
     
     # Training loop with progress bar (by iteration)
     best_val_loss = float("inf")
+    best_test_metrics = None
     n_epochs = args.epochs
     n_batches_per_epoch = len(train_loader)
     total_iterations = n_epochs * n_batches_per_epoch
@@ -207,11 +210,16 @@ def train_trial(
             total=total_iterations,
         )
         
+        # Track last completed epoch's metrics to show in progress bar
+        last_epoch_metrics = None  # (train_metrics, test_metrics)
+        
         for epoch in range(n_epochs):
             # Train with iteration tracking
             model.train()
             total_loss = 0.0
             n_samples = 0
+            all_predictions = []
+            all_targets = []
             
             for batch_idx, (sequences, targets) in enumerate(train_loader):
                 sequences = sequences.to(device)
@@ -227,22 +235,65 @@ def train_trial(
                 loss.backward()
                 optimizer.step()
                 
-                total_loss += loss.item() * len(sequences)
+                batch_loss = loss.item()
+                total_loss += batch_loss * len(sequences)
                 n_samples += len(sequences)
+                
+                # Collect predictions and targets for full metrics computation
+                all_predictions.append(predictions.detach().cpu().numpy())
+                all_targets.append(targets.detach().cpu().numpy())
+                
+                # Log per-batch loss to command line and wandb
+                logger.debug(
+                    f"Trial {trial.number} | Epoch {epoch+1}/{n_epochs} | "
+                    f"Batch {batch_idx+1}/{n_batches_per_epoch} | Loss: {batch_loss:.4f}"
+                )
+                
+                if wandb_run is not None:
+                    import wandb
+                    step = epoch * n_batches_per_epoch + batch_idx
+                    wandb.log({
+                        "train/batch_loss": batch_loss,
+                        "trial": trial.number,
+                        "batch": batch_idx,
+                        "epoch": epoch,
+                    }, step=step)
                 
                 # Update progress bar after each iteration
                 current_iteration += 1
                 current_loss = total_loss / n_samples if n_samples > 0 else 0.0
+                
+                # Build description with current batch info and last epoch metrics
+                desc_parts = [
+                    f"[cyan]Trial {trial.number} | "
+                    f"Epoch {epoch+1}/{n_epochs} | "
+                    f"Batch {batch_idx+1}/{n_batches_per_epoch} | "
+                    f"Loss: {current_loss:.4f}"
+                ]
+                
+                # Add last epoch metrics if available (after first epoch completes)
+                if last_epoch_metrics is not None:
+                    last_train, last_test = last_epoch_metrics
+                    desc_parts.append(
+                        f" | Last: Train R²={last_train.get('r2_total', 0):.3f} "
+                        f"Val R²={last_test['r2_total']:.3f} "
+                        f"Val MAPE={last_test['mape_total']:.1f}%"
+                    )
+                
                 progress.update(
                     task,
                     advance=1,
-                    description=f"[cyan]Trial {trial.number} | "
-                    f"Epoch {epoch+1}/{n_epochs} | "
-                    f"Batch {batch_idx+1}/{n_batches_per_epoch} | "
-                    f"Loss: {current_loss:.4f}",
+                    description="".join(desc_parts),
                 )
             
-            train_metrics = {"loss": total_loss / n_samples if n_samples > 0 else 0.0}
+            # Compute full training metrics
+            avg_loss = total_loss / n_samples if n_samples > 0 else 0.0
+            train_metrics = {"loss": avg_loss}
+            if all_predictions:
+                all_predictions = np.concatenate(all_predictions, axis=0)
+                all_targets = np.concatenate(all_targets, axis=0)
+                full_metrics = compute_metrics(all_predictions, all_targets)
+                train_metrics.update(full_metrics)
             
             # Validate at end of epoch
             test_metrics = validate(model, test_loader, criterion, device)
@@ -250,26 +301,88 @@ def train_trial(
             # Update learning rate
             scheduler.step(test_metrics["loss"])
             
+            # Log per-epoch metrics to wandb
+            # Use step after last batch of epoch to maintain monotonic step ordering
+            if wandb_run is not None:
+                import wandb
+                epoch_step = epoch * n_batches_per_epoch + n_batches_per_epoch
+                log_dict = {
+                    "trial": trial.number,
+                    "epoch": epoch,
+                    "train/loss": train_metrics["loss"],
+                    "train/mae_primary": train_metrics.get("mae_primary", 0),
+                    "train/mae_secondary": train_metrics.get("mae_secondary", 0),
+                    "train/mae_total": train_metrics.get("mae_total", 0),
+                    "train/rmse_primary": train_metrics.get("rmse_primary", 0),
+                    "train/rmse_secondary": train_metrics.get("rmse_secondary", 0),
+                    "train/rmse_total": train_metrics.get("rmse_total", 0),
+                    "train/mape_primary": train_metrics.get("mape_primary", 0),
+                    "train/mape_secondary": train_metrics.get("mape_secondary", 0),
+                    "train/mape_total": train_metrics.get("mape_total", 0),
+                    "train/r2_primary": train_metrics.get("r2_primary", 0),
+                    "train/r2_secondary": train_metrics.get("r2_secondary", 0),
+                    "train/r2_total": train_metrics.get("r2_total", 0),
+                    "test/loss": test_metrics["loss"],
+                    "test/mae_primary": test_metrics["mae_primary"],
+                    "test/mae_secondary": test_metrics["mae_secondary"],
+                    "test/mae_total": test_metrics["mae_total"],
+                    "test/rmse_primary": test_metrics["rmse_primary"],
+                    "test/rmse_secondary": test_metrics["rmse_secondary"],
+                    "test/rmse_total": test_metrics["rmse_total"],
+                    "test/mape_primary": test_metrics["mape_primary"],
+                    "test/mape_secondary": test_metrics["mape_secondary"],
+                    "test/mape_total": test_metrics["mape_total"],
+                    "test/r2_primary": test_metrics["r2_primary"],
+                    "test/r2_secondary": test_metrics["r2_secondary"],
+                    "test/r2_total": test_metrics["r2_total"],
+                    "learning_rate": optimizer.param_groups[0]["lr"],
+                }
+                wandb.log(log_dict, step=epoch_step)
+            
+            # Store metrics for next epoch's progress bar
+            last_epoch_metrics = (train_metrics, test_metrics)
+            
             # Update progress bar with validation metrics
             progress.update(
                 task,
-                description=f"[cyan]Trial {trial.number} | "
-                f"Epoch {epoch+1}/{n_epochs} | "
-                f"Val Loss: {test_metrics['loss']:.4f} | "
-                f"R²: {test_metrics['r2_total']:.4f}",
+                description=(
+                    f"[cyan]Trial {trial.number} | "
+                    f"Epoch {epoch+1}/{n_epochs} | "
+                    f"Train Loss: {train_metrics['loss']:.4f} | "
+                    f"Train R²: {train_metrics.get('r2_total', 0):.4f} | "
+                    f"Train MAPE: {train_metrics.get('mape_total', 0):.2f}% | "
+                    f"Val Loss: {test_metrics['loss']:.4f} | "
+                    f"Val R²: {test_metrics['r2_total']:.4f} | "
+                    f"Val MAPE: {test_metrics['mape_total']:.2f}%"
+                ),
             )
             
             # Check pruning
             try:
                 pruning_callback(test_metrics)
             except optuna.TrialPruned:
-                # Trial was pruned, return current best
+                # Trial was pruned, store all performance metrics before returning
+                metrics_to_store = best_test_metrics if best_test_metrics is not None else test_metrics
+                if metrics_to_store:
+                    # Store all metrics: MAE, RMSE, MAPE, R² for primary, secondary, and total
+                    metric_types = ["mae", "rmse", "mape", "r2"]
+                    metric_targets = ["primary", "secondary", "total"]
+                    for metric_type in metric_types:
+                        for target in metric_targets:
+                            metric_name = f"{metric_type}_{target}"
+                            value = metrics_to_store.get(metric_name, np.inf if metric_type == "mape" else 0.0)
+                            # Convert np.inf to None for storage (optuna handles None better than inf)
+                            if np.isfinite(value):
+                                trial.set_user_attr(metric_name, float(value))
+                            else:
+                                trial.set_user_attr(metric_name, None)
                 logger.info(f"Trial {trial.number} pruned at epoch {epoch+1}")
                 return best_val_loss
             
-            # Track best validation loss
+            # Track best validation loss and metrics
             if test_metrics["loss"] < best_val_loss:
                 best_val_loss = test_metrics["loss"]
+                best_test_metrics = test_metrics.copy()
             
             # Early stopping
             if early_stopping(test_metrics["loss"], model, epoch):
@@ -277,12 +390,30 @@ def train_trial(
                 break
     
     # Restore best weights
+    final_metrics = None
     if early_stopping.restore_best_weights and early_stopping.best_weights:
         early_stopping.restore_best_model(model)
         
         # Re-validate with best weights
         final_metrics = validate(model, test_loader, criterion, device)
         best_val_loss = final_metrics["loss"]
+    
+    # Store all performance metrics as optuna trial user attributes for monitoring
+    # Use final_metrics if available (best weights), otherwise use best_test_metrics
+    metrics_to_store = final_metrics if final_metrics is not None else best_test_metrics
+    if metrics_to_store:
+        # Store all metrics: MAE, RMSE, MAPE, R² for primary, secondary, and total
+        metric_types = ["mae", "rmse", "mape", "r2"]
+        metric_targets = ["primary", "secondary", "total"]
+        for metric_type in metric_types:
+            for target in metric_targets:
+                metric_name = f"{metric_type}_{target}"
+                value = metrics_to_store.get(metric_name, np.inf if metric_type == "mape" else 0.0)
+                # Convert np.inf to None for storage (optuna handles None better than inf)
+                if np.isfinite(value):
+                    trial.set_user_attr(metric_name, float(value))
+                else:
+                    trial.set_user_attr(metric_name, None)
     
     return best_val_loss
 
@@ -419,6 +550,7 @@ def main():
     parser.add_argument(
         "--use-wandb",
         action="store_true",
+        default=True,
         help="Enable Weights & Biases logging",
     )
     parser.add_argument(
@@ -456,22 +588,8 @@ def main():
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
     
-    # Initialize wandb if enabled
-    wandb_run = None
-    if args.use_wandb:
-        try:
-            import wandb
-            wandb.init(
-                project=args.wandb_project,
-                entity=args.wandb_entity,
-                config=vars(args),
-                name=f"optuna-{args.study_name}",
-            )
-            wandb_run = wandb.run
-            logger.info("Weights & Biases logging enabled")
-        except ImportError:
-            logger.warning("wandb not available. Install with: pip install wandb")
-            args.use_wandb = False
+    # Wandb will be initialized per trial in the objective function
+    # No global initialization needed
     
     # Load data
     logger.info(f"Loading data from {args.zarr_path}...")
@@ -507,17 +625,45 @@ def main():
     
     # Define objective function
     def objective(trial: optuna.Trial) -> float:
+        wandb_run = None
         try:
-            val_loss = train_trial(trial, sequences, targets, device, args)
+            # Initialize wandb for this trial
+            if args.use_wandb:
+                try:
+                    import wandb
+                    wandb.init(
+                        project=args.wandb_project,
+                        entity=args.wandb_entity,
+                        config={**vars(args), **trial.params},
+                        name=f"{args.study_name}-trial-{trial.number}",
+                        reinit=True,  # Allow reinitialization for multiple trials
+                    )
+                    wandb_run = wandb.run
+                    logger.info(f"Wandb run initialized for trial {trial.number}")
+                except ImportError:
+                    logger.warning("wandb not available. Install with: pip install wandb")
+                    wandb_run = None
             
-            # Log to wandb if enabled
-            if args.use_wandb and wandb_run:
+            val_loss = train_trial(trial, sequences, targets, device, args, wandb_run=wandb_run)
+            
+            # Log final trial metrics to wandb
+            if wandb_run:
                 import wandb
-                wandb.log({
+                log_dict = {
                     "trial": trial.number,
                     "validation_loss": val_loss,
                     **trial.params,
-                })
+                }
+                # Add all performance metrics from trial user attributes
+                metric_types = ["mae", "rmse", "mape", "r2"]
+                metric_targets = ["primary", "secondary", "total"]
+                for metric_type in metric_types:
+                    for target in metric_targets:
+                        metric_name = f"{metric_type}_{target}"
+                        value = trial.user_attrs.get(metric_name)
+                        if value is not None:
+                            log_dict[f"trial/{metric_name}"] = value
+                wandb.log(log_dict)
             
             return val_loss
         except optuna.TrialPruned:
@@ -526,6 +672,14 @@ def main():
             logger.error(f"Trial {trial.number} failed: {e}")
             # Return a poor value instead of failing
             return float("inf") if args.direction == "minimize" else float("-inf")
+        finally:
+            # Always finish wandb run for this trial
+            if wandb_run:
+                try:
+                    import wandb
+                    wandb.finish()
+                except Exception as e:
+                    logger.warning(f"Error finishing wandb run for trial {trial.number}: {e}")
     
     # Run optimization
     logger.info(f"Starting optimization with {args.n_trials} trials...")
@@ -559,11 +713,7 @@ def main():
             pickle.dump(study, f)
         logger.info(f"Study saved to: {study_path}")
     
-    # Finish wandb
-    if args.use_wandb and wandb_run:
-        import wandb
-        wandb.finish()
-    
+    # Wandb runs are finished per trial in the objective function
     logger.info("Hyperparameter tuning complete!")
 
 
