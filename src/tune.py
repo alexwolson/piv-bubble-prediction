@@ -87,8 +87,8 @@ class OptunaPruningCallback:
 
 def train_trial(
     trial: optuna.Trial,
-    sequences: torch.Tensor,
-    targets: torch.Tensor,
+    experiments: list,
+    targets: Optional[torch.Tensor],  # Ignored in lazy mode
     device: torch.device,
     args: argparse.Namespace,
     wandb_run=None,
@@ -98,8 +98,8 @@ def train_trial(
     
     Args:
         trial: Optuna trial object
-        sequences: Training sequences
-        targets: Training targets
+        experiments: List of experiment dictionaries (lazy loading)
+        targets: Ignored
         device: Device to train on
         args: Command-line arguments
         
@@ -122,13 +122,18 @@ def train_trial(
         f"dropout={dropout:.3f}, cnn_feat={cnn_feature_dim}"
     )
     
-    # Get sequence dimensions
-    sequence_length, height, width, channels = sequences.shape[1:]
+    # Get sequence dimensions from first experiment
+    # experiments is a list of dicts with 'frames', 'targets', etc.
+    first_exp_frames = experiments[0]["frames"]
+    # frames: (n_frames, height, width, channels)
+    height, width, channels = first_exp_frames.shape[1:]
+    sequence_length = args.sequence_length
     
-    # Create dataset
+    # Create dataset (Lazy loading)
     dataset = PIVBubbleDataset(
-        sequences,
-        targets,
+        experiments=experiments,
+        sequence_length=sequence_length,
+        stride=args.stride,
         device=str(device),
         augment=args.augment,
         temporal_shift_max=args.temporal_shift_max,
@@ -592,6 +597,7 @@ def main():
     # No global initialization needed
     
     # Load data
+    # Load data
     logger.info(f"Loading data from {args.zarr_path}...")
     sequences, targets, metadata, _ = load_all_experiments(
         args.zarr_path,
@@ -600,9 +606,10 @@ def main():
         normalize=True,
         limit=args.limit,
         return_per_experiment=True,
+        lazy=True,
     )
     
-    logger.info(f"Loaded {len(sequences)} sequences")
+    logger.info(f"Loaded {len(sequences)} experiments (lazy loading)")
     
     # Create or load study
     if args.storage:

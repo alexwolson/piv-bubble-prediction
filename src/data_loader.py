@@ -6,7 +6,7 @@ Creates sequences from PIV velocity fields aligned to bubble count timestamps.
 
 import logging
 from pathlib import Path
-from typing import Dict, List, Tuple, Optional
+from typing import Dict, List, Tuple, Optional, Any
 
 import numpy as np
 import pandas as pd
@@ -122,25 +122,23 @@ def normalize_velocity_fields(
     return u_norm, v_norm, stats
 
 
-def load_experiment_data(
+def load_experiment_raw(
     experiment_group: zarr.Group,
-    sequence_length: int = 20,
-    stride: int = 1,
     normalize: bool = True,
-) -> Tuple[np.ndarray, np.ndarray, Dict]:
+) -> Dict:
     """
-    Load and prepare data for a single experiment.
+    Load raw data for a single experiment without creating sequences.
     
     Args:
         experiment_group: Zarr experiment group
-        sequence_length: Number of frames per sequence
-        stride: Stride for sliding window
         normalize: Whether to normalize velocity fields
     
     Returns:
-        sequences: (n_sequences, sequence_length, height, width, channels)
-        targets: (n_sequences, 2)
-        metadata: Experiment metadata
+        Dictionary with:
+            - frames: (n_frames, height, width, channels)
+            - targets: (n_sensor_rows, 2)
+            - alignment_indices: (n_frames,)
+            - norm_stats: Normalization statistics
     """
     # Load PIV data
     u, v, piv_time_s, x_mm, y_mm = load_piv_data(experiment_group)
@@ -163,6 +161,41 @@ def load_experiment_data(
     # Stack u and v into channels
     # Shape: (frames, height, width, channels=2)
     piv_frames = np.stack([u, v], axis=-1)
+    
+    return {
+        "frames": piv_frames,
+        "targets": bubble_counts,
+        "alignment_indices": alignment_indices,
+        "norm_stats": norm_stats,
+    }
+
+
+def load_experiment_data(
+    experiment_group: zarr.Group,
+    sequence_length: int = 20,
+    stride: int = 1,
+    normalize: bool = True,
+) -> Tuple[np.ndarray, np.ndarray, Dict]:
+    """
+    Load and prepare data for a single experiment.
+    
+    Args:
+        experiment_group: Zarr experiment group
+        sequence_length: Number of frames per sequence
+        stride: Stride for sliding window
+        normalize: Whether to normalize velocity fields
+    
+    Returns:
+        sequences: (n_sequences, sequence_length, height, width, channels)
+        targets: (n_sequences, 2)
+        metadata: Experiment metadata
+    """
+    # Load raw data
+    raw_data = load_experiment_raw(experiment_group, normalize=normalize)
+    piv_frames = raw_data["frames"]
+    bubble_counts = raw_data["targets"]
+    alignment_indices = raw_data["alignment_indices"]
+    norm_stats = raw_data["norm_stats"]
     
     # Create sequences
     sequences, targets = create_sequences(
@@ -189,7 +222,8 @@ def load_all_experiments(
     normalize: bool = True,
     limit: Optional[int] = None,
     return_per_experiment: bool = False,
-) -> Tuple[np.ndarray, np.ndarray, List[Dict], Optional[np.ndarray]]:
+    lazy: bool = False,
+) -> Tuple[Any, Optional[np.ndarray], List[Dict], Optional[np.ndarray]]:
     """
     Load data from all experiments in Zarr archive.
     
@@ -199,13 +233,18 @@ def load_all_experiments(
         stride: Stride for sliding window
         normalize: Whether to normalize velocity fields
         limit: Limit number of experiments (for testing)
-        return_per_experiment: If True, also return experiment IDs per sequence
+        return_per_experiment: If True, also return experiment IDs per sequence (ignored if lazy=True)
+        lazy: If True, return list of raw experiment dicts instead of concatenated sequences
     
     Returns:
-        all_sequences: (total_sequences, sequence_length, height, width, channels)
-        all_targets: (total_sequences, 2)
+        sequences: 
+            - If lazy=False: (total_sequences, sequence_length, height, width, channels)
+            - If lazy=True: List[Dict] with raw experiment data
+        targets: 
+            - If lazy=False: (total_sequences, 2)
+            - If lazy=True: None
         all_metadata: List of metadata dictionaries
-        experiment_ids: (Optional) Array of experiment IDs for each sequence
+        experiment_ids: (Optional) Array of experiment IDs for each sequence (None if lazy=True)
     """
     zarr_root = open_zarr_archive(zarr_path)
     experiments = find_all_experiments(zarr_root)
@@ -218,34 +257,55 @@ def load_all_experiments(
     all_sequences = []
     all_targets = []
     all_metadata = []
-    experiment_ids = [] if return_per_experiment else None
+    experiment_ids = [] if return_per_experiment and not lazy else None
     
     for exp_idx, (exp_group, metadata) in enumerate(experiments):
         try:
-            sequences, targets, exp_metadata = load_experiment_data(
-                exp_group,
-                sequence_length=sequence_length,
-                stride=stride,
-                normalize=normalize,
-            )
-            all_sequences.append(sequences)
-            all_targets.append(targets)
-            all_metadata.append(exp_metadata)
-            
-            if return_per_experiment:
-                # Track which experiment each sequence belongs to
-                experiment_ids.extend([exp_idx] * len(sequences))
-            
-            logger.info(
-                f"Loaded {len(sequences)} sequences from {metadata['sen']} "
-                f"{metadata['variant']} PIV{metadata['piv_run']:02d}"
-            )
+            if lazy:
+                # Load raw data without creating sequences
+                raw_data = load_experiment_raw(exp_group, normalize=normalize)
+                all_sequences.append(raw_data)
+                
+                # Add metadata
+                exp_metadata = extract_experiment_metadata(exp_group)
+                exp_metadata["norm_stats"] = raw_data["norm_stats"]
+                all_metadata.append(exp_metadata)
+                
+                logger.info(
+                    f"Loaded raw data from {metadata['sen']} "
+                    f"{metadata['variant']} PIV{metadata['piv_run']:02d}"
+                )
+            else:
+                # Load fully prepared sequences
+                sequences, targets, exp_metadata = load_experiment_data(
+                    exp_group,
+                    sequence_length=sequence_length,
+                    stride=stride,
+                    normalize=normalize,
+                )
+                all_sequences.append(sequences)
+                all_targets.append(targets)
+                all_metadata.append(exp_metadata)
+                
+                if return_per_experiment:
+                    # Track which experiment each sequence belongs to
+                    experiment_ids.extend([exp_idx] * len(sequences))
+                
+                logger.info(
+                    f"Loaded {len(sequences)} sequences from {metadata['sen']} "
+                    f"{metadata['variant']} PIV{metadata['piv_run']:02d}"
+                )
         except Exception as e:
             logger.warning(f"Failed to load experiment {metadata.get('sen', '?')}: {e}")
             continue
     
     if len(all_sequences) == 0:
         raise ValueError("No experiments loaded successfully")
+    
+    if lazy:
+        # Return list of raw experiments
+        logger.info(f"Loaded {len(all_sequences)} experiments (lazy mode)")
+        return all_sequences, None, all_metadata, None
     
     # Concatenate all sequences
     all_sequences = np.concatenate(all_sequences, axis=0)

@@ -53,3 +53,6 @@ optuna_*.log
 wandb/
 optuna_studies/
 wandb/latest-run
+
+# macOS Metadata
+._*
