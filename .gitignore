@@ -1,3 +1,5 @@
+models/
+temp_optuna_test/
 wandb/
 
 # Python

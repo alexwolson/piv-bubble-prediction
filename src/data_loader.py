@@ -18,6 +18,7 @@ from src.zarr_reader import (
     load_piv_data,
     load_bubble_counts,
     load_alignment_indices,
+    extract_experiment_metadata,
 )
 
 logger = logging.getLogger(__name__)
@@ -207,7 +208,6 @@ def load_experiment_data(
     )
     
     # Extract metadata
-    from src.zarr_reader import extract_experiment_metadata
     metadata = extract_experiment_metadata(experiment_group)
     metadata["norm_stats"] = norm_stats
     metadata["n_sequences"] = len(sequences)

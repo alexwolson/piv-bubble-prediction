@@ -112,9 +112,9 @@ def train_trial(
     batch_size = trial.suggest_categorical("batch_size", [8, 16, 32])
     
     lstm_hidden_dim = trial.suggest_categorical("lstm_hidden_dim", [128, 256, 512])
-    lstm_num_layers = trial.suggest_int("lstm_num_layers", 1, 3)
+    lstm_num_layers = trial.suggest_int("lstm_num_layers", 1, 10)
     dropout = trial.suggest_float("dropout", 0.3, 0.7)
-    cnn_feature_dim = trial.suggest_categorical("cnn_feature_dim", [64, 128, 256])
+    cnn_feature_dim = trial.suggest_categorical("cnn_feature_dim", [64, 128, 256, 512, 1024])
     
     logger.info(
         f"Trial {trial.number}: lr={learning_rate:.6f}, batch_size={batch_size}, "
@@ -129,9 +129,25 @@ def train_trial(
     height, width, channels = first_exp_frames.shape[1:]
     sequence_length = args.sequence_length
     
-    # Create dataset (Lazy loading)
-    dataset = PIVBubbleDataset(
-        experiments=experiments,
+    # Split experiments for train/test (prevent data leakage)
+    rng = np.random.RandomState(42)
+    n_experiments = len(experiments)
+    n_test = max(1, int(n_experiments * args.test_split))
+    
+    # Create indices and shuffle
+    indices = np.arange(n_experiments)
+    rng.shuffle(indices)
+    
+    test_indices = set(indices[:n_test])
+    
+    train_experiments = [experiments[i] for i in range(n_experiments) if i not in test_indices]
+    test_experiments = [experiments[i] for i in range(n_experiments) if i in test_indices]
+    
+    logger.info(f"Split by experiments: {len(train_experiments)} train, {len(test_experiments)} test")
+    
+    # Create datasets (Lazy loading)
+    train_dataset = PIVBubbleDataset(
+        experiments=train_experiments,
         sequence_length=sequence_length,
         stride=args.stride,
         device=str(device),
@@ -140,13 +156,12 @@ def train_trial(
         noise_std=args.noise_std,
     )
     
-    # Split into train and test
-    n_total = len(dataset)
-    n_test = int(n_total * args.test_split)
-    n_train = n_total - n_test
-    
-    train_dataset, test_dataset = random_split(
-        dataset, [n_train, n_test], generator=torch.Generator().manual_seed(42)
+    test_dataset = PIVBubbleDataset(
+        experiments=test_experiments,
+        sequence_length=sequence_length,
+        stride=args.stride,
+        device=str(device),
+        augment=False, # No augmentation for testing
     )
     
     # Configure DataLoader

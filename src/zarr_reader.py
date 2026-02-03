@@ -130,5 +130,11 @@ def find_all_experiments(zarr_root: zarr.Group) -> List[Tuple[zarr.Group, Dict]]
             if isinstance(subgroup, zarr.Group):
                 traverse(subgroup)
 
-    traverse(zarr_root)
+    with warnings.catch_warnings():
+        warnings.filterwarnings(
+            "ignore",
+            message=".*not recognized as a component.*",
+            category=UserWarning
+        )
+        traverse(zarr_root)
     return experiments
