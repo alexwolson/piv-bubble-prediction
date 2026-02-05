@@ -59,8 +59,9 @@ sys.stderr.reconfigure(line_buffering=True) if hasattr(sys.stderr, 'reconfigure'
 class OptunaPruningCallback:
     """Callback to integrate Optuna pruning with training loop."""
     
-    def __init__(self, trial: optuna.Trial, epoch: int = 0):
+    def __init__(self, trial: optuna.Trial, metric_name: str = "loss", epoch: int = 0):
         self.trial = trial
+        self.metric_name = metric_name
         self.epoch = epoch
     
     def __call__(self, metrics: Dict[str, float]) -> bool:
@@ -74,7 +75,18 @@ class OptunaPruningCallback:
             True if trial should be stopped (pruned), False otherwise
         """
         # Report intermediate value for pruning
-        self.trial.report(metrics["loss"], self.epoch)
+        value = metrics.get(self.metric_name)
+        if value is not None:
+            self.trial.report(value, self.epoch)
+        else:
+            # Fallback to loss if metric not found, or just warn?
+            # For now, let's assume if it's not strictly 'loss' and not found, we might have an issue.
+            # But 'loss' is always present.
+            if self.metric_name == "loss":
+                self.trial.report(metrics["loss"], self.epoch)
+            else:
+                logger.warning(f"Metric {self.metric_name} not found in metrics. Available: {list(metrics.keys())}")
+        
         self.epoch += 1
         
         # Check if trial should be pruned
@@ -92,7 +104,8 @@ def train_trial(
     device: torch.device,
     args: argparse.Namespace,
     wandb_run=None,
-) -> float:
+    objective_metric: str = "loss",
+) -> Dict[str, float]:
     """
     Train a single trial with suggested hyperparameters.
     
@@ -102,9 +115,11 @@ def train_trial(
         targets: Ignored
         device: Device to train on
         args: Command-line arguments
+        wandb_run: Wandb run object
+        objective_metric: Metric to use for pruning (loss, r2_total, etc.)
         
     Returns:
-        Validation loss (objective value)
+        Dictionary of best validation metrics
     """
     # Suggest hyperparameters (using new Optuna API)
     learning_rate = trial.suggest_float("learning_rate", 1e-5, 1e-3, log=True)
@@ -207,10 +222,11 @@ def train_trial(
     )
     
     # Optuna pruning callback
-    pruning_callback = OptunaPruningCallback(trial, epoch=0)
+    pruning_callback = OptunaPruningCallback(trial, metric_name=objective_metric, epoch=0)
     
     # Training loop with progress bar (by iteration)
     best_val_loss = float("inf")
+    best_val_metric = float("inf") if args.direction == "minimize" else float("-inf")
     best_test_metrics = None
     n_epochs = args.epochs
     n_batches_per_epoch = len(train_loader)
@@ -397,12 +413,28 @@ def train_trial(
                             else:
                                 trial.set_user_attr(metric_name, None)
                 logger.info(f"Trial {trial.number} pruned at epoch {epoch+1}")
-                return best_val_loss
+                return best_test_metrics if best_test_metrics is not None else test_metrics
             
             # Track best validation loss and metrics
             if test_metrics["loss"] < best_val_loss:
                 best_val_loss = test_metrics["loss"]
-                best_test_metrics = test_metrics.copy()
+            
+            # Track best objective metric
+            current_metric = test_metrics.get(objective_metric)
+            if current_metric is not None:
+                is_better = False
+                if args.direction == "minimize":
+                    is_better = current_metric < best_val_metric
+                else:
+                    is_better = current_metric > best_val_metric
+                
+                if is_better:
+                    best_val_metric = current_metric
+                    best_test_metrics = test_metrics.copy()
+            else:
+                 # Fallback if metric not found (shouldn't happen if properly configured)
+                 if test_metrics["loss"] < best_val_loss:
+                     best_test_metrics = test_metrics.copy()
             
             # Early stopping
             if early_stopping(test_metrics["loss"], model, epoch):
@@ -416,7 +448,7 @@ def train_trial(
         
         # Re-validate with best weights
         final_metrics = validate(model, test_loader, criterion, device)
-        best_val_loss = final_metrics["loss"]
+        # We don't overwrite best_val_loss here as we return full metrics
     
     # Store all performance metrics as optuna trial user attributes for monitoring
     # Use final_metrics if available (best weights), otherwise use best_test_metrics
@@ -435,7 +467,7 @@ def train_trial(
                 else:
                     trial.set_user_attr(metric_name, None)
     
-    return best_val_loss
+    return metrics_to_store if metrics_to_store is not None else {}
 
 
 def main():
@@ -524,8 +556,8 @@ def main():
     parser.add_argument(
         "--patience",
         type=int,
-        default=10,
-        help="Early stopping patience",
+        default=None,
+        help="Early stopping patience (default: epochs // 3)",
     )
     
     # Device and augmentation
@@ -587,6 +619,12 @@ def main():
     )
     
     args = parser.parse_args()
+    
+    # Set default patience if not provided
+    if args.patience is None:
+        args.patience = max(1, args.epochs // 3)
+        logger.info(f"Patience not specified. Defaulting to {args.patience} (epochs // 3)")
+
     
     # Set default zarr path if not provided (environment-aware)
     if args.zarr_path is None:
@@ -666,7 +704,31 @@ def main():
                     logger.warning("wandb not available. Install with: pip install wandb")
                     wandb_run = None
             
-            val_loss = train_trial(trial, sequences, targets, device, args, wandb_run=wandb_run)
+            # Determine metric name based on args.objective
+            # args.objective is "validation_loss" or "validation_r2"
+            # metrics returned by validate() use "loss" and "r2_total"
+            metric_map = {
+                "validation_loss": "loss",
+                "validation_r2": "r2_total"
+            }
+            target_metric_name = metric_map.get(args.objective, "loss")
+            
+            best_metrics = train_trial(
+                trial, 
+                sequences, 
+                targets, 
+                device, 
+                args, 
+                wandb_run=wandb_run,
+                objective_metric=target_metric_name
+            )
+            
+            val_loss = best_metrics.get("loss", float("inf"))
+            objective_value = best_metrics.get(target_metric_name)
+            
+            if objective_value is None:
+                logger.warning(f"Objective metric {target_metric_name} not found in results. Using loss.")
+                objective_value = val_loss
             
             # Log final trial metrics to wandb
             if wandb_run:
@@ -674,6 +736,7 @@ def main():
                 log_dict = {
                     "trial": trial.number,
                     "validation_loss": val_loss,
+                    "objective_value": objective_value,
                     **trial.params,
                 }
                 # Add all performance metrics from trial user attributes
@@ -687,7 +750,7 @@ def main():
                             log_dict[f"trial/{metric_name}"] = value
                 wandb.log(log_dict)
             
-            return val_loss
+            return objective_value
         except optuna.TrialPruned:
             raise
         except Exception as e:
