@@ -24,8 +24,9 @@ class PIVBubbleDataset(Dataset):
     
     def __init__(
         self,
-        sequences: np.ndarray,
-        targets: np.ndarray,
+        experiments: list,
+        sequence_length: int = 20,
+        stride: int = 1,
         device: str = "cpu",
         augment: bool = False,
         temporal_shift_max: int = 2,
@@ -33,32 +34,66 @@ class PIVBubbleDataset(Dataset):
     ):
         """
         Args:
-            sequences: (n_sequences, sequence_length, height, width, channels)
-            targets: (n_sequences, 2)
+            experiments: List of experiment dictionaries, each containing:
+                - frames: (n_frames, height, width, channels)
+                - targets: (n_sensor_rows, 2)
+                - alignment_indices: (n_frames,)
+            sequence_length: Number of frames per sequence
+            stride: Stride for sliding window
             device: Device to move tensors to
             augment: Whether to apply data augmentation
             temporal_shift_max: Maximum temporal shift in frames (±)
             noise_std: Standard deviation for Gaussian noise injection (0 to disable)
         """
-        self.sequences = sequences
-        self.targets = targets
+        self.experiments = experiments
+        self.sequence_length = sequence_length
+        self.stride = stride
         self.device = device
         self.augment = augment
         self.temporal_shift_max = temporal_shift_max
         self.noise_std = noise_std
         
-        # Validate shapes
-        assert len(sequences) == len(targets), "Sequences and targets must have same length"
-        assert targets.shape[1] == 2, "Targets must have 2 columns (primary, secondary)"
+        # Build index mapping
+        self.indices = []  # List of (experiment_idx, start_frame_idx)
         
+        for exp_idx, exp in enumerate(experiments):
+            frames = exp["frames"]
+            targets = exp["targets"]
+            alignment_indices = exp["alignment_indices"]
+            
+            n_frames = len(frames)
+            n_sensor_rows = len(targets)
+            
+            # Identify valid sequences
+            for start_idx in range(0, n_frames - sequence_length + 1, stride):
+                end_idx = start_idx + sequence_length
+                last_frame_idx = end_idx - 1
+                
+                # Check alignment validity
+                if last_frame_idx >= len(alignment_indices):
+                    continue
+                    
+                sensor_row_idx = alignment_indices[last_frame_idx]
+                if sensor_row_idx < 0 or sensor_row_idx >= n_sensor_rows:
+                    continue
+                
+                self.indices.append((exp_idx, start_idx))
+        
+        if not self.indices:
+            raise ValueError("No valid sequences found in any experiment")
+            
     def __len__(self) -> int:
-        return len(self.sequences)
+        return len(self.indices)
     
     def _apply_temporal_shift(
         self, sequence: np.ndarray, shift: int
     ) -> np.ndarray:
         """Apply temporal shift to sequence."""
-        seq_len = sequence.shape[0]
+        # Note: In lazy loading, we might want to slice differently instead of zero-padding
+        # but to keep behavior identical to original implementation, we'll shift the extracted slice.
+        # Ideally, we would slice [start+shift : end+shift] but that requires bounds checking
+        # against the raw experiment data.
+        # For now, let's keep the original image-based shift logic which zero-pads.
         if shift == 0:
             return sequence
         
@@ -84,11 +119,22 @@ class PIVBubbleDataset(Dataset):
     def __getitem__(self, idx: int) -> Tuple[torch.Tensor, torch.Tensor]:
         """
         Returns:
-            sequence: (sequence_length, channels, height, width)
-            target: (2,) - [bubble_count_primary, bubble_count_secondary]
+            sequence: (sequence_length, channels, height, width) [Torch Tensor]
+            target: (2,) - [bubble_count_primary, bubble_count_secondary] [Torch Tensor]
         """
-        sequence = self.sequences[idx].copy()  # (sequence_length, height, width, channels)
-        target = self.targets[idx]  # (2,)
+        exp_idx, start_idx = self.indices[idx]
+        exp = self.experiments[exp_idx]
+        
+        # Extract sequence
+        end_idx = start_idx + self.sequence_length
+        # Returns (sequence_length, height, width, channels)
+        # Using .copy() to ensure we have a writable copy and not just a view
+        sequence = exp["frames"][start_idx:end_idx].copy()
+        
+        # Get target
+        last_frame_idx = end_idx - 1
+        sensor_row_idx = exp["alignment_indices"][last_frame_idx]
+        target = exp["targets"][sensor_row_idx].copy()
         
         # Apply data augmentation if enabled
         if self.augment:

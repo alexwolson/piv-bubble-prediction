@@ -89,7 +89,30 @@ def create_objective_function(
                     logger.warning("wandb not available. Install with: pip install wandb")
                     wandb_run = None
             
-            val_loss = train_trial(trial, sequences, targets, device, args, wandb_run=wandb_run)
+            # Determine metric name based on args.objective
+            # args.objective is "validation_loss" or "validation_r2"
+            metric_map = {
+                "validation_loss": "loss",
+                "validation_r2": "r2_total"
+            }
+            target_metric_name = metric_map.get(args.objective, "loss")
+            
+            best_metrics = train_trial(
+                trial, 
+                sequences, 
+                targets, 
+                device, 
+                args, 
+                wandb_run=wandb_run,
+                objective_metric=target_metric_name
+            )
+            
+            val_loss = best_metrics.get("loss", float("inf"))
+            objective_value = best_metrics.get(target_metric_name)
+            
+            if objective_value is None:
+                logger.warning(f"Objective metric {target_metric_name} not found in results. Using loss.")
+                objective_value = val_loss
             
             # Log final trial metrics to wandb
             if wandb_run:
@@ -97,6 +120,7 @@ def create_objective_function(
                 log_dict = {
                     "trial": trial.number,
                     "validation_loss": val_loss,
+                    "objective_value": objective_value,
                     "worker_id": args.worker_id,
                     **trial.params,
                 }
@@ -111,7 +135,7 @@ def create_objective_function(
                             log_dict[f"trial/{metric_name}"] = value
                 wandb.log(log_dict)
             
-            return val_loss
+            return objective_value
         except optuna.TrialPruned:
             raise
         except Exception as e:
@@ -200,6 +224,13 @@ def main():
         choices=["minimize", "maximize"],
         default="minimize",
         help="Direction of optimization",
+    )
+    parser.add_argument(
+        "--objective",
+        type=str,
+        choices=["validation_loss", "validation_r2"],
+        default="validation_loss",
+        help="Objective metric to optimize",
     )
     parser.add_argument(
         "--pruning",
