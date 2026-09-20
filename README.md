@@ -1,3 +1,8 @@
+> **⚠️ Archived — superseded by [`alexwolson/steel-flow`](https://github.com/alexwolson/steel-flow).**
+>
+> The final code from this repository has been consolidated into the canonical
+> `steel-flow` monorepo. This repository is kept read-only for historical reference.
+
 # PIV Bubble Prediction
 
 Predicts primary and secondary bubble counts from PIV (Particle Image Velocimetry) velocity field data using a CNN-LSTM deep learning model. Supports local development on Apple Silicon (MPS) or CPU and HPC cluster deployment (SLURM/CUDA, H100 GPUs on the Nibi cluster).
